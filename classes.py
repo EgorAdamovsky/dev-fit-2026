@@ -308,9 +308,9 @@ class Elevator:
 
         awt = self._total_wait_time / self._total_served
         art = self._total_ride_time / self._total_served
-        total_dist = self._total_distance
+        total_dist = self._total_distance / self._total_served
 
-        denominator = awt + art + total_dist
+        denominator = awt + 3.0 * art + 60.0 * total_dist
         if denominator == 0:
             return 10000.0
 

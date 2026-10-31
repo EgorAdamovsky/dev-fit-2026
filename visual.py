@@ -71,7 +71,7 @@ def draw_metrics(screen, metrics, font, speed_multiplier, density):
     formula_y = y + len(lines) * 25 + 10
     formula_lines = [
         "Формула оценки:",
-        "Счет = (1000 х P) / (AWT + ART + L)",
+        "Счет = (1000 × P) / (AWT + 3 × ART + 60 × (L / P))",
         "+ больше людей за меньшее время",
         "- лишние или долгие поездки"
     ]

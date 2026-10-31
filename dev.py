@@ -3,10 +3,10 @@ import random
 
 ## ПАРАМЕТРЫ СИМУЛЯЦИИ (можно менять)
 TEAM = "ЕНОТИКИ"
-START_TIME = 8  # начало симуляции с 0 часа для финального теста
+START_TIME = 0  # начало симуляции с 0 часа для финального теста
 SPEED_MULT = 1  # будет установлен на 64х для финального теста
 SEED = 42  # будет выбран случайно для финального теста
-NUM_DAYS = 1  # 7 дней для финального теста
+NUM_DAYS = 7  # 7 дней для финального теста
 DENS = 0.3  # плотность трафика 0.3 для финального теста
 
 ## ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ (можете добавлять свои)
@@ -55,3 +55,17 @@ def my_way(elevator: Elevator):
     # После go_to_and_stop() лифт нас слушаться уже не будет до следующей остановки.
     global_stops = global_stops + 1
     print(f"Всего остановок: {global_stops}.", "\n===")
+
+
+## Вариант демонстрационного my_way() без комментариев и лишних переменных
+def my_way_clear(elevator: Elevator):
+    elevator.unload_all()
+    if elevator.get_waiting_people():
+        while elevator.board_first_passenger():
+            pass
+    waiting_floors = elevator.get_waiting_floors()
+    passes = elevator.get_passenger_destinations()
+    if passes:
+        elevator.go_to_and_stop(passes[random.randint(0, len(passes) - 1)])
+    elif waiting_floors:
+        elevator.go_to_and_stop(waiting_floors[random.randint(0, len(waiting_floors) - 1)])
