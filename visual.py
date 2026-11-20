@@ -47,6 +47,7 @@ COMPLAINTS = [
 # Состояние пузырей: ключ (floor_num, person_id) -> {visible, shown_at, hidden_at, phrase_idx, last_phrase_idx}
 _bubble_states = {}
 animating_exited = []
+_visual_rng = random.Random(12345)
 
 
 def floor_y(floor_number):
@@ -70,9 +71,9 @@ def _pick_phrase(last_idx):
     """Выбирает случайную реплику, отличную от предыдущей."""
     if len(COMPLAINTS) <= 1:
         return 0
-    idx = random.randrange(len(COMPLAINTS))
+    idx = _visual_rng.randrange(len(COMPLAINTS))
     while idx == last_idx:
-        idx = random.randrange(len(COMPLAINTS))
+        idx = _visual_rng.randrange(len(COMPLAINTS))
     return idx
 
 
