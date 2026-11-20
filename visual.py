@@ -1,6 +1,6 @@
 import pygame
 import math
-
+import random
 import dev
 import main
 
@@ -14,6 +14,38 @@ ELEVATOR_H = FLOOR_HEIGHT - 10
 MAX_WAIT_TIME = 3600.0
 MAX_VISIBLE_QUEUE = 15
 
+# Порог времени ожидания (в секундах), после которого человек начинает жаловаться
+COMPLAINT_THRESHOLD = 300.0
+# Сколько миллисекунд реплика висит на экране
+BUBBLE_SHOW_MS = 4500
+# Минимальная пауза между показами реплик (миллисекунды)
+BUBBLE_COOLDOWN_MS = 12000
+
+COMPLAINTS = [
+    "ну сколько можно ждать",
+    "я опаздываю",
+    "где этот лифт",
+    "может по лестнице",
+    "скучно",
+    "когда же",
+    "безобразие",
+    "я устал",
+    "тут можно состариться",
+    "лифт сломался",
+    "может пешком",
+    "я на совещание",
+    "почему так долго",
+    "уже десять минут",
+    "это издевательство",
+    "вызовите кого-нибудь",
+    "я чай уже три раза выпил",
+    "начальник убьет",
+    "хоть бы один приехал",
+    "я в туалете стоял"
+]
+
+# Состояние пузырей: ключ (floor_num, person_id) -> {visible, shown_at, hidden_at, phrase_idx, last_phrase_idx}
+_bubble_states = {}
 animating_exited = []
 
 
@@ -34,12 +66,95 @@ def _person_color(wait_time):
     return tuple(int(c * (1.0 - ratio)) for c in base)
 
 
+def _pick_phrase(last_idx):
+    """Выбирает случайную реплику, отличную от предыдущей."""
+    if len(COMPLAINTS) <= 1:
+        return 0
+    idx = random.randrange(len(COMPLAINTS))
+    while idx == last_idx:
+        idx = random.randrange(len(COMPLAINTS))
+    return idx
+
+
+def _update_bubble_state(key, wait_time):
+    """
+    Обновляет состояние пузыря для конкретного человека.
+    Возвращает индекс реплики, если пузырь должен быть видим, иначе None.
+    """
+    now = pygame.time.get_ticks()
+
+    if wait_time <= COMPLAINT_THRESHOLD:
+        # Человек еще не дорос до жалоб - сбрасываем состояние
+        if key in _bubble_states:
+            del _bubble_states[key]
+        return None
+
+    if key not in _bubble_states:
+        # Первая жалоба
+        _bubble_states[key] = {
+            'visible': True,
+            'shown_at': now,
+            'hidden_at': None,
+            'phrase_idx': _pick_phrase(-1),
+            'last_phrase_idx': -1
+        }
+        return _bubble_states[key]['phrase_idx']
+
+    state = _bubble_states[key]
+
+    if state['visible']:
+        if now - state['shown_at'] >= BUBBLE_SHOW_MS:
+            state['visible'] = False
+            state['hidden_at'] = now
+            state['last_phrase_idx'] = state['phrase_idx']
+            return None
+        return state['phrase_idx']
+    else:
+        if state['hidden_at'] is not None and now - state['hidden_at'] >= BUBBLE_COOLDOWN_MS:
+            # cooldown прошел - показываем новую реплику
+            state['visible'] = True
+            state['shown_at'] = now
+            state['hidden_at'] = None
+            state['phrase_idx'] = _pick_phrase(state['last_phrase_idx'])
+            return state['phrase_idx']
+        return None
+
+
+def _draw_bubble(screen, x, y, text, font):
+    """Отрисовывает облако с текстом над заданными координатами."""
+    padding_x, padding_y = 8, 5
+    text_surf = font.render(text, True, (30, 30, 30))
+    w = text_surf.get_width() + padding_x * 2
+    h = text_surf.get_height() + padding_y * 2
+
+    bx = x - w // 2
+    by = max(2, y - h - 8)  # Над головой, чуть ниже чем было (-14)
+
+    # Тень
+    pygame.draw.rect(screen, (0, 0, 0, 80), (bx + 2, by + 2, w, h), border_radius=6)
+    # Фон пузыря
+    pygame.draw.rect(screen, (255, 255, 255), (bx, by, w, h), border_radius=6)
+    pygame.draw.rect(screen, (60, 60, 60), (bx, by, w, h), 1, border_radius=6)
+
+    # Хвостик (направлен вниз к голове)
+    tail_points = [
+        (x - 5, by + h),
+        (x + 5, by + h),
+        (x, by + h + 9)
+    ]
+    pygame.draw.polygon(screen, (255, 255, 255), tail_points)
+    pygame.draw.lines(screen, (60, 60, 60), True, tail_points, 1)
+    # Перекрываем внутреннюю линию основания хвостика
+    pygame.draw.line(screen, (255, 255, 255), (x - 4, by + h), (x + 4, by + h), 2)
+
+    screen.blit(text_surf, (bx + padding_x, by + padding_y))
+
+
 def draw_metrics(screen, metrics, font, speed_multiplier, density):
     x, y = 720, 10
     color = (210, 215, 225)
     speed_color = (100, 200, 255)
     formula_color = (140, 150, 170)
-
     lines = [
         ("Обслужено (P):", f"{metrics['served']} чел."),
         ("Среднее T ожидания (AWT):", f"{metrics['awt']:.1f} с"),
@@ -50,7 +165,6 @@ def draw_metrics(screen, metrics, font, speed_multiplier, density):
         ("Скорость ( - + ):", f"{speed_multiplier:.1f}x"),
         ("Трафик ( [ ] ):", f"{density:.1f}x"),
     ]
-
     for i, (label, value) in enumerate(lines):
         if label == "Качество:":
             if metrics['quality'] > 50:
@@ -91,9 +205,11 @@ def draw_quality_graph(screen, elevator, font):
 
     title = font.render("Счет:", True, (210, 215, 225))
     screen.blit(title, (graph_x + 5, graph_y - 20))
+
     history = elevator.get_quality_history()
     if len(history) < 2:
         return
+
     max_q = max(history)
     min_q = min(history)
     q_range = max_q - min_q
@@ -180,7 +296,6 @@ def draw_end_screen(screen, metrics, quality_history, font, saved=False):
         max_q = max(quality_history)
         min_q = min(quality_history)
         q_range = max_q - min_q if max_q > min_q else 1.0
-
         padding = q_range * 0.15
         min_plot = min_q - padding
         max_plot = max_q + padding
@@ -190,9 +305,7 @@ def draw_end_screen(screen, metrics, quality_history, font, saved=False):
             ratio = i / 4.0
             y_pos = gy + gh - int(ratio * gh)
             val = min_plot + ratio * plot_range
-
             pygame.draw.line(screen, (45, 50, 65), (gx + 1, y_pos), (gx + gw - 1, y_pos), 1)
-
             val_text = font.render(f"{val:.0f}", True, (140, 145, 165))
             screen.blit(val_text, (gx + gw + 10, y_pos - 10))
 
@@ -214,7 +327,6 @@ def draw_end_screen(screen, metrics, quality_history, font, saved=False):
             pygame.draw.circle(screen, (255, 215, 0), (int(points[-1][0]), int(points[-1][1])), 5)
 
     hint_y = WINDOW_H - 50
-
     esc_text = font.render("[ESC] ВЫХОД", True, (140, 145, 165))
     save_text = font.render("[S] СОХРАНИТЬ", True, (100, 220, 100) if not saved else (80, 120, 80))
 
@@ -254,6 +366,7 @@ def draw_building(screen, building, elevator, global_time=0.0, speed_multiplier=
 
     hour = int(global_time * 24)
     minute = int((global_time * 24 - hour) * 60)
+
     font = pygame.font.SysFont(None, 24)
     font_small = pygame.font.SysFont(None, 16)
     font_tiny = pygame.font.SysFont(None, 12)
@@ -269,8 +382,10 @@ def draw_building(screen, building, elevator, global_time=0.0, speed_multiplier=
 
     # Плавное синусоидальное мерцание
     pulse = (math.sin(pygame.time.get_ticks() * 0.006) + 1) / 2
-
     floor_platform_end = BUILDING_X + BUILDING_W + 20 + MAX_VISIBLE_QUEUE * 25 + 15
+
+    # Список пузырей, которые нужно отрисовать ПОСЛЕ лифта
+    pending_bubbles = []
 
     for floor in building.floors:
         f_num = floor.get_number()
@@ -323,22 +438,42 @@ def draw_building(screen, building, elevator, global_time=0.0, speed_multiplier=
         queue_len = len(floor.queue)
         visible = min(queue_len, MAX_VISIBLE_QUEUE)
 
+        # Собираем всех кандидатов на реплику (i >= 2, чтобы не перекрывать лифт)
+        bubble_candidates = []
+
         # Очередь людей (по центру этажа по вертикали)
         for i in range(visible):
             person = floor.queue[i]
             px = BUILDING_X + BUILDING_W + 20 + i * 25
             py = y + FLOOR_HEIGHT // 2
             radius = 10
-
             p_color = _person_color(person.wait_time)
             pygame.draw.circle(screen, (15, 15, 20), (px + 1, py + 1), radius)
             pygame.draw.circle(screen, (p_color), (px, py), radius)
             pygame.draw.circle(screen, (50, 50, 50), (px, py), radius, 1)
-
             text_color = (255, 255, 255) if person.wait_time > MAX_WAIT_TIME / 2 else (30, 30, 30)
             dest_text = font_small.render(str(person.dest_floor), True, text_color)
             text_rect = dest_text.get_rect(center=(px, py))
             screen.blit(dest_text, text_rect)
+
+            # Кандидаты на реплику - начиная с третьего человека в очереди
+            if i >= 2:
+                key = (f_num, id(person))
+                phrase_idx = _update_bubble_state(key, person.wait_time)
+                if phrase_idx is not None:
+                    bubble_candidates.append((px, py - radius, COMPLAINTS[phrase_idx]))
+
+        # Отрисовываем пузыри с минимальным горизонтальным интервалом,
+        # чтобы они не перекрывались, но при этом их было достаточно много.
+        MIN_BUBBLE_GAP = 12  # Минимальный зазор между пузырями в пикселях
+        last_right = -10 ** 9
+        for px, by, phrase in bubble_candidates:
+            text_surf = font_small.render(phrase, True, (30, 30, 30))
+            w = text_surf.get_width() + 16  # padding_x * 2 = 16
+            left = px - w // 2
+            if left >= last_right + MIN_BUBBLE_GAP:
+                pending_bubbles.append((px, by, phrase))
+                last_right = left + w
 
         if queue_len > 0:
             queue_text = font.render(f"{queue_len} чел.", True, (255, 120, 120))
@@ -357,7 +492,6 @@ def draw_building(screen, building, elevator, global_time=0.0, speed_multiplier=
     if elevator.get_state() == "MOVING":
         current_floor_val = elevator.get_current_floor()
         target_floor_val = elevator.get_target_floor()
-
         # Рисуем стрелку только если лифт еще не доехал до целевого этажа
         if abs(elevator.get_position() - target_floor_val) > 0.01:
             target_y = floor_y(target_floor_val) + FLOOR_HEIGHT // 2
@@ -385,7 +519,6 @@ def draw_building(screen, building, elevator, global_time=0.0, speed_multiplier=
         row = i // cols
         px = ex + 10 + col * 14
         py = ey + 12 + row * 16
-
         pygame.draw.circle(screen, (220, 180, 80), (px, py), 7)
         dest_text = font_tiny.render(str(person.dest_floor), True, (30, 30, 30))
         text_rect = dest_text.get_rect(center=(px, py))
@@ -412,6 +545,10 @@ def draw_building(screen, building, elevator, global_time=0.0, speed_multiplier=
         if person['x'] < 0 or person['alpha'] <= 0:
             animating_exited.remove(person)
 
+    # Отрисовка пузырей с репликами поверх всех элементов
+    for bx, by, phrase in pending_bubbles:
+        _draw_bubble(screen, bx, by, phrase, font_small)
+
 
 def draw_calls_list(screen, elevator, font):
     x = 720
@@ -422,25 +559,27 @@ def draw_calls_list(screen, elevator, font):
         waiting_str = ", ".join(map(str, sorted(waiting)))
     else:
         waiting_str = "нет"
+
     calls_text = font.render(f"Вызовы: {waiting_str}", True, (100, 200, 255))
     screen.blit(calls_text, (x, y))
-
     y += 15
+
     passes = elevator.get_destinations()
     if passes:
         dests = [p.dest_floor for p in passes]
     else:
         dests = []
+
     dests_str = ", ".join(map(str, dests)) if dests else "пусто"
     dest_text = font.render(f"Пассажиры ({len(passes)}/{elevator.get_capacity()}): {dests_str}", True, (255, 200, 100))
     screen.blit(dest_text, (x, y))
-
     y += 15
+
     now_state = elevator.get_state()
     state_text = font.render(f"Статус: {now_state}", True, (210, 215, 225))
     screen.blit(state_text, (x, y))
-
     y += 15
+
     now_pos = elevator.get_current_floor()
     goal_pos = elevator.get_target_floor()
     pos_text = font.render(f"Этаж: {now_pos} -> {goal_pos}", True, (210, 215, 225))
