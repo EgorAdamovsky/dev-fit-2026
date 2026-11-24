@@ -18,6 +18,21 @@ TEXT_MAIN = '#E2E8F0'
 TEXT_MUTED = '#94A3B8'
 GRID_COLOR = '#334155'
 
+# Организации команд — по организационной табличке
+TEAM_ORIGINS = {
+    'БРИКИ': 'ПГЭК',
+    'ПРОДАМ ДРОВА': 'ПГЭК',
+    'TECHDROTS': 'ФИТ',
+    'ВАЙБ КОДЕРЫ': 'ФИТ',
+    'ТАПАТЕЛИ ХОМЯКОВ': 'ФИТ',
+    'BIBA&BOBA': 'ФКНЭ',
+    'DEMOНЫ SMERTИ 4': 'ФИТ',
+    'HELLOWORLD (PRINT)': 'ФИТ',
+    'КБШНИКИ': 'ФКНЭ',
+    'BARNIE': 'ФКНЭ',
+    'ДЕНДРИТЫ': 'ФИТ',
+}
+
 
 def parse_results_file(filepath: str) -> Tuple[str, float, List[float]]:
     filename = Path(filepath).stem
@@ -60,9 +75,28 @@ def plot_leaderboard(folder_path: str, output_image: str = 'RESULTS.png') -> Non
     if not results:
         raise ValueError("в указанной папке не найдено файлов с корректными данными.")
 
-    results.sort(key=lambda x: x[1], reverse=True)
+    results.sort(key=lambda x: (-x[1], x[0]))
 
-    fig, ax = plt.subplots(figsize=(20, 12), facecolor=BG_COLOR)
+    # Плотная нумерация мест: одинаковый счёт -> одно и то же место (1, 1, 2, ...)
+    places = []
+    place = 0
+    prev_score = None
+    for _, score, _ in results:
+        if prev_score is None or score != prev_score:
+            place += 1
+            prev_score = score
+        places.append(place)
+
+    # Команды с идентичной историей: линии лягут друг на друга,
+    # поэтому рисуем их разными штрихами, чтобы обе были видны.
+    history_groups = {}
+    for name, score, history in results:
+        key = tuple(round(v, 6) for v in history)
+        history_groups.setdefault(key, []).append(name)
+
+    dash_styles = ['-', (0, (9, 5)), (0, (2, 3)), (0, (14, 4, 3, 4))]
+
+    fig, ax = plt.subplots(figsize=(14, 9.5), facecolor=BG_COLOR)
     ax.set_facecolor(PLOT_BG)
 
     legend_elements = []
@@ -70,56 +104,83 @@ def plot_leaderboard(folder_path: str, output_image: str = 'RESULTS.png') -> Non
         x_axis = range(len(history))
         color = PALETTE[idx % len(PALETTE)]
 
-        if idx == 0:
-            ax.plot(x_axis, history, color=f"{color}30", linewidth=10, zorder=2)
-            line, = ax.plot(x_axis, history, color=color, linewidth=3.5, zorder=3)
-            ax.scatter(x_axis[-1], history[-1], color=color, s=200, zorder=4, edgecolor=BG_COLOR, linewidth=3)
-            legend_elements.append((line, f"{name} — {score:.1f} (Победитель)"))
-        else:
-            line, = ax.plot(x_axis, history, color=color, linewidth=2.5, alpha=0.9, zorder=1)
-            legend_elements.append((line, f"{name} — {score:.1f}"))
+        group = history_groups[tuple(round(v, 6) for v in history)]
+        dup_pos = group.index(name)
+        linestyle = dash_styles[dup_pos % len(dash_styles)]
+
+        is_winner = places[idx] == 1
+        line, = ax.plot(
+            x_axis, history, color=color,
+            linewidth=3.4 if is_winner else 2.4,
+            alpha=0.95, zorder=3 + dup_pos * 0.1,
+            linestyle=linestyle,
+            solid_capstyle='butt', dash_capstyle='butt',
+        )
+
+        origin = TEAM_ORIGINS.get(name, '')
+        label = f"{places[idx]}. {name}" + (f" ({origin})" if origin else "")
+        legend_elements.append((line, label))
 
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
     ax.spines['bottom'].set_color(GRID_COLOR)
     ax.spines['left'].set_color(GRID_COLOR)
-    ax.tick_params(colors=TEXT_MUTED, labelsize=20, width=1.5, length=8)
+    ax.tick_params(colors=TEXT_MUTED, labelsize=15, width=1.4, length=7, pad=9)
     ax.grid(True, linestyle='--', alpha=0.3, color=GRID_COLOR, zorder=0)
 
-    ax.set_title('Сравнительный анализ эффективности алгоритмов управления лифтом',
-                 fontsize=34, fontweight='bold', color=TEXT_MAIN, pad=20, loc='center')
-    ax.set_xlabel('Шаг симуляции (время)', fontsize=24, color=TEXT_MUTED, labelpad=20)
-    ax.set_ylabel('Текущий счет (Score)', fontsize=24, color=TEXT_MUTED, labelpad=20)
+    fig.suptitle('/dev/fit 2026',
+                 fontsize=30, fontweight='bold', color=TEXT_MAIN, y=0.965)
+    ax.set_xlabel('Шаг симуляции', fontsize=17, color=TEXT_MUTED, labelpad=14)
+    ax.set_ylabel('Счёт', fontsize=17, color=TEXT_MUTED, labelpad=14)
 
-    top3_text = "ТОП-3 РЕЗУЛЬТАТА:\n" + "\n".join([
-        f"  1. {results[0][0]}: {results[0][1]:.1f}",
-        f"  2. {results[1][0]}: {results[1][1]:.1f}" if len(results) > 1 else "",
-        f"  3. {results[2][0]}: {results[2][1]:.1f}" if len(results) > 2 else ""
-    ])
-
-    ax.text(0.02, 0.95, top3_text, transform=ax.transAxes, fontsize=20,
-            fontweight='bold', color=TEXT_MAIN,
-            bbox=dict(boxstyle='round,pad=1.2', facecolor=PLOT_BG, edgecolor=PALETTE[0], alpha=0.95, linewidth=2),
-            verticalalignment='top', zorder=5)
+    # Отступы от краёв, чтобы крайние точки не прилипали к рамке
+    n = len(results[0][2])
+    ax.set_xlim(-0.015 * n, 1.015 * n)
+    top_score = max(history[-1] for _, _, history in results)
+    ax.set_ylim(0, top_score * 1.07)
 
     lines = [elem[0] for elem in legend_elements]
     labels = [elem[1] for elem in legend_elements]
 
-    # Легенда внутри графика справа, с полупрозрачным фоном
-    leg = ax.legend(lines, labels, loc='center right', bbox_to_anchor=(0.98, 0.5),
-                    fontsize=18, framealpha=0.95, facecolor=PLOT_BG, edgecolor=GRID_COLOR,
-                    labelcolor=TEXT_MAIN, title="УЧАСТНИКИ", title_fontsize=22)
+    # Легенда справа от графика, одним столбцом, растянутая по высоте графика
+    fig.subplots_adjust(left=0.09, right=0.61, top=0.89, bottom=0.13)
 
+    legend_fontsize = 15
+    legend_kwargs = dict(
+        loc='upper left', bbox_to_anchor=(1.035, 1.0), ncol=1,
+        fontsize=legend_fontsize, framealpha=0.95, facecolor=PLOT_BG,
+        edgecolor=GRID_COLOR, labelcolor=TEXT_MAIN,
+        title="УЧАСТНИКИ", title_fontsize=18,
+        borderpad=1.3, handlelength=2.8, handletextpad=0.9,
+        borderaxespad=0.0,
+    )
+
+    leg = ax.legend(lines, labels, labelspacing=0.6, **legend_kwargs)
     plt.setp(leg.get_title(), color=TEXT_MAIN)
 
-    # Убраны subplots_adjust и pad_inches - они создавали пустые поля
-    plt.tight_layout()
-    plt.savefig(output_image, dpi=300, bbox_inches='tight', facecolor=fig.get_facecolor())
+    # Подбираем межстрочный интервал так, чтобы легенда была ровно высотой с график
+    fig.canvas.draw()
+    ax_height = ax.get_window_extent().height
+    row_step = max(1, len(labels) - 1) * legend_fontsize * fig.dpi / 72.0
+    target_height = ax_height - 1.0
+
+    spacing = 0.6
+    for _ in range(6):
+        leg = ax.legend(lines, labels, labelspacing=spacing, **legend_kwargs)
+        plt.setp(leg.get_title(), color=TEXT_MAIN)
+        fig.canvas.draw()
+        legend_height = leg.get_window_extent().height
+        if abs(legend_height - target_height) <= 1.5:
+            break
+        spacing = max(0.2, spacing + (target_height - legend_height) / row_step * 0.8)
+
+    plt.savefig(output_image, dpi=300, bbox_inches='tight', pad_inches=0.35,
+                facecolor=fig.get_facecolor())
     print(f"График успешно сохранен: {output_image}")
 
 
 if __name__ == '__main__':
-    TARGET_FOLDER = './players'
+    TARGET_FOLDER = './players/test'
     try:
         plot_leaderboard(TARGET_FOLDER)
     except Exception as e:

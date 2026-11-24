@@ -3,7 +3,7 @@ import random
 import math
 
 ## ПАРАМЕТРЫ СИМУЛЯЦИИ (можно менять)
-TEAM = "\'HelloWorld\'(print)"
+TEAM = "HELLOWORLD (PRINT)"
 START_TIME = 8  # начало симуляции с 0 часа для финального теста
 SPEED_MULT = 64  # будет установлен на 64х для финального теста
 SEED = 42  # будет выбран случайно для финального теста

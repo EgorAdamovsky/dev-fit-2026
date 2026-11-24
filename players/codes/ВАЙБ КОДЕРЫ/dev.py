@@ -3,7 +3,7 @@ from math import floor
 from classes import *
 import random
 
-TEAM = "ВАЙБКОДЕРЫ"
+TEAM = "ВАЙБ КОДЕРЫ"
 START_TIME = 0  # начало симуляции с 0 часа для финального теста
 SPEED_MULT = 64  # будет установлен на 64х для финального теста
 SEED = 42  # будет выбран случайно для финального теста
