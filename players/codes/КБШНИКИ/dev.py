@@ -29,11 +29,6 @@ def my_way(elevator: Elevator):
 
     passengers = elevator.get_passengers_count()
 
-
-
-
-
-
     if passes:
         # едем на ближайший этаж
         state = 11
