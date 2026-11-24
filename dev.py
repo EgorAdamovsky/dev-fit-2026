@@ -2,19 +2,20 @@ from classes import *
 import random
 
 ## ПАРАМЕТРЫ СИМУЛЯЦИИ (можно менять)
-TEAM = "ЕНОТИКИ"
+TEAM = "Barnie"
 START_TIME = 8  # начало симуляции с 0 часа для финального теста
-SPEED_MULT = 1  # будет установлен на 64х для финального теста
+SPEED_MULT = 100  # будет установлен на 64х для финального теста
 SEED = 42  # будет выбран случайно для финального теста
-NUM_DAYS = 1  # 7 дней для финального теста
+NUM_DAYS = 7  # 7 дней для финального теста
 DENS = 0.3  # плотность трафика 0.3 для финального теста
 
 ## ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ (можете добавлять свои)
 global_stops = 0  # пример глобальной переменной, количество остановок лифта
+nap = 1  # 1 - вверх, -1 - вниз
 
 
 def my_way(elevator: Elevator):
-    global global_stops
+    global global_stops, nap
 
     passes = elevator.get_passenger_destinations()  # список целевых этажей пассажиров, уже находящихся в лифте
     current_floor = elevator.get_current_floor()  # текущий этаж, на котором находится лифт
@@ -42,30 +43,36 @@ def my_way(elevator: Elevator):
     passes = elevator.get_passenger_destinations()  # список целевых этажей пассажиров, уже находящихся в лифте
     print(f"Загружен на {pass_num}/{capacity} чел.")
 
-    # 3. Выбираем следующий этаж для движения.
-    if passes:  # если в лифте еще есть пассажиры
-        target = passes[random.randint(0, len(passes) - 1)]  # выбираем случайного пассажира из списка
-        elevator.go_to_and_stop(target)  # отправляем лифт на целевой этаж этого пассажира
-        print(f"Еду на {target} этаж.")
-    elif waiting_floors:  # если лифт пуст, но где-то есть вызовы
-        target = waiting_floors[random.randint(0, len(waiting_floors) - 1)]  # выбираем случайный этаж с вызовом
-        elevator.go_to_and_stop(target)  # отправляем лифт на выбранный этаж
-        print(f"Еду на {target} этаж.")
+    # 3. Выбор следующего этажа
+    if passes:
+        target = None
+        while target is None:
+            if nap > 0:
+                above = [p for p in passes if p > current_floor]
+                if above:
+                    target = min(above)  # ближайший этаж сверху
+                else:
+                    nap = -1  # сверху никого нет, разворачиваемся вниз
+            else:
+                below = [p for p in passes if p < current_floor]
+                if below:
+                    target = max(below)  # ближайший этаж снизу
+                else:
+                    nap = 1  # снизу никого нет, разворачиваемся вверх
+        elevator.go_to_and_stop(target)
+
+    elif waiting_floors:
+        maxx = max(waiting_floors)
+        minn = min(waiting_floors)
+        # if maxx < current_floor:
+        #     nap = -1
+        # else:
+        #     nap = 1
+        if current_floor > minn: 
+            elevator.go_to_and_stop(maxx)
+        else: 
+            elevator.go_to_and_stop(minn)
 
     # После go_to_and_stop() лифт нас слушаться уже не будет до следующей остановки.
     global_stops = global_stops + 1
     print(f"Всего остановок: {global_stops}.", "\n===")
-
-
-## Вариант демонстрационного my_way() без комментариев и лишних переменных
-def my_way_clear(elevator: Elevator):
-    elevator.unload_all()
-    if elevator.get_waiting_people():
-        while elevator.board_first_passenger():
-            pass
-    waiting_floors = elevator.get_waiting_floors()
-    passes = elevator.get_passenger_destinations()
-    if passes:
-        elevator.go_to_and_stop(passes[random.randint(0, len(passes) - 1)])
-    elif waiting_floors:
-        elevator.go_to_and_stop(waiting_floors[random.randint(0, len(waiting_floors) - 1)])
